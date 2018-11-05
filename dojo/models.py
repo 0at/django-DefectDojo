@@ -75,6 +75,13 @@ class System_Settings(models.Model):
                                               "issue reaches the maximum "
                                               "number of duplicates, the "
                                               "oldest will be deleted.")
+    dedup_sensitivity_choices = (('High', 'High'),
+                    ('Medium', 'Medium'))
+    dedup_sensitivity = models.CharField(max_length=20, blank=True,
+                                             null=True, choices=dedup_sensitivity_choices,
+                                             default='Medium',
+                                             help_text="Sets the sensitity at which to set the de-dupe process at. High sensitivity will match far fewer results than other levels")
+
     enable_jira = models.BooleanField(default=False,
                                       verbose_name='Enable JIRA integration',
                                       blank=False)
@@ -1228,6 +1235,9 @@ class Finding(models.Model):
         if (dedupe_option):
             system_settings = System_Settings.objects.get()
             if system_settings.enable_deduplication:
+                #set the sensitivity which will be used for running dedupe
+                if system_settings.dedup_sensitivity:
+                    kwargs['dedup_sensitivity'] = system_settings.dedup_sensitivity  
                 from dojo.tasks import async_dedupe
                 from dojo.utils import sync_dedupe
                 try:
@@ -1235,7 +1245,8 @@ class Finding(models.Model):
                         sync_dedupe(self, *args, **kwargs)
                     else:
                         async_dedupe.delay(self, *args, **kwargs)
-                except:
+                except Exception as e:
+                    logging.error("failed to enter the de-dupe entry {} due to error: {} will try to re-queue into async workers".format(self, e))
                     async_dedupe.delay(self, *args, **kwargs)
                     pass
 
@@ -1248,6 +1259,7 @@ class Finding(models.Model):
                     else:
                         async_false_history.delay(self, *args, **kwargs)
                 except:
+                    logging.error("failed to handle enter the false positive entry {} due to error: {} will try to re-queue into async workers".format(self, e))
                     async_false_history.delay(self, *args, **kwargs)
                     pass
 

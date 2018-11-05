@@ -55,6 +55,7 @@ def sync_false_history(new_finding, *args, **kwargs):
 
 
 def sync_dedupe(new_finding, *args, **kwargs):
+        #TODO lets add the de-dupe algorithm selector here
         eng_findings_cwe = Finding.objects.filter(
             test__engagement__product=new_finding.test.engagement.product,
             cwe=new_finding.cwe,
@@ -959,6 +960,8 @@ def add_issue(find, push_to_jira):
             if ((jpkey.push_all_issues and Finding.get_number_severity(
                     System_Settings.objects.get().jira_minimum_severity) >
                  Finding.get_number_severity(find.severity))):
+                print("this didn't meet the requirements: {} with min: {}".format(Finding.get_number_severity(System_Settings.objects.get().jira_minimum_severity), 
+                Finding.get_number_severity(find.severity)))
                 pass
             else:
                 try:
