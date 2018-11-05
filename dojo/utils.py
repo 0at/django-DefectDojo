@@ -53,9 +53,7 @@ def sync_false_history(new_finding, *args, **kwargs):
         new_finding.false_p = True
         super(Finding, new_finding).save(*args, **kwargs)
 
-
-def sync_dedupe(new_finding, *args, **kwargs):
-        #TODO lets add the de-dupe algorithm selector here
+def _sync_dedupe_medium(new_finding, *args, **kwargs):
         eng_findings_cwe = Finding.objects.filter(
             test__engagement__product=new_finding.test.engagement.product,
             cwe=new_finding.cwe,
@@ -93,7 +91,7 @@ def sync_dedupe(new_finding, *args, **kwargs):
                 new_finding.duplicate_finding = find
                 find.duplicate_list.add(new_finding)
                 find.found_by.add(new_finding.test.test_type)
-                super(Finding, new_finding).save(*args, **kwargs)
+                return new_finding
             elif find.hash_code == new_finding.hash_code:
                 new_finding.duplicate = True
                 new_finding.active = False
@@ -102,6 +100,22 @@ def sync_dedupe(new_finding, *args, **kwargs):
                 find.duplicate_list.add(new_finding)
                 find.found_by.add(new_finding.test.test_type)
                 super(Finding, new_finding).save(*args, **kwargs)
+
+
+
+def sync_dedupe(new_finding, *args, **kwargs):
+        #TODO lets add the de-dupe algorithm selector here
+        #if the de-dupe algorithm hasn't been specified do the medium as default 
+        if 'dedup_sensitivity' not in kwargs:
+            new_finding_temp = self._sync_dedupe_medium(new_finding, *args, **kwargs)
+        elif kwargs['dedup_sensitivity'] == 'High':
+            new_finding_temp = self._sync_dedupe_high(new_finding, *args, **kwargs)
+        elif kwargs['dedup_sensitivty'] == 'Medium':
+            new_finding_temp = self._sync_dedupe_medium(new_finding, *args, **kwargs)
+        else:
+            logging.error("we've ended up with a dedupe sensitivity that is undefined: {} for new_finding: {}".format(kwargs['dedup_sensitivity'], new_finding))
+            new_finding_temp = new_finding
+        super(Finding, new_finding_temp).save(*args, **kwargs)  
 
 
 def sync_rules(new_finding, *args, **kwargs):
