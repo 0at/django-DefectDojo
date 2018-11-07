@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import re
+import traceback
 from uuid import uuid4
 from django.conf import settings
 from watson import search as watson
@@ -1246,7 +1247,7 @@ class Finding(models.Model):
                     else:
                         async_dedupe.delay(self, *args, **kwargs)
                 except Exception as e:
-                    logging.error("failed to enter the de-dupe entry {} due to error: {} will try to re-queue into async workers".format(self, e))
+                    logging.error("failed to enter the de-dupe entry {} due to error: {} will try to re-queue into async workers with traceback {}".format(self, e, traceback.print_exc()))
                     async_dedupe.delay(self, *args, **kwargs)
                     pass
 

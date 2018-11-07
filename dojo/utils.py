@@ -106,11 +106,11 @@ def _sync_dedupe_medium(new_finding, *args, **kwargs):
 
 
 def _mark_duplicate_finding(finding_new, finding_old):
-    new_finding.duplicate = True
-    new_finding.active = False
-    new_finding.verified = False
-    new_finding.duplicate_finding = finding_old
-    return new_finding
+    finding_new.duplicate = True
+    finding_new.active = False
+    finding_new.verified = False
+    finding_new.duplicate_finding = finding_old
+    return finding_new
 
 #high sensitivity will be very strict and only confirm results that are nearly the exact same (eg: title, mitigation)
 def _sync_dedupe_high(new_finding, *args, **kwargs):
@@ -171,14 +171,14 @@ def sync_dedupe(new_finding, *args, **kwargs):
         #TODO lets add the de-dupe algorithm selector here
         #if the de-dupe algorithm hasn't been specified do the medium as default 
         if 'dedup_sensitivity' not in kwargs:
-            self._sync_dedupe_medium(new_finding, *args, **kwargs)
+            _sync_dedupe_medium(new_finding, *args, **kwargs)
         else:
             dedup_sensitivity = kwargs['dedup_sensitivity']
             del kwargs['dedup_sensitivity']
             if dedup_sensitivity == 'High':
-                self._sync_dedupe_high(new_finding, *args, **kwargs)
+                _sync_dedupe_high(new_finding, *args, **kwargs)
             elif dedup_sensitivty == 'Medium':
-                self._sync_dedupe_medium(new_finding, *args, **kwargs)
+                _sync_dedupe_medium(new_finding, *args, **kwargs)
             else:
                 logging.error("we've ended up with a dedupe sensitivity that is undefined: {} for new_finding: {}".format(kwargs['dedup_sensitivity'], new_finding))
 
