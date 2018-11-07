@@ -54,6 +54,7 @@ def sync_false_history(new_finding, *args, **kwargs):
         super(Finding, new_finding).save(*args, **kwargs)
 
 def _sync_dedupe_medium(new_finding, *args, **kwargs):
+        #get all findings with the same CWE
         eng_findings_cwe = Finding.objects.filter(
             test__engagement__product=new_finding.test.engagement.product,
             cwe=new_finding.cwe,
@@ -61,6 +62,7 @@ def _sync_dedupe_medium(new_finding, *args, **kwargs):
             dynamic_finding=new_finding.dynamic_finding,
             date__lte=new_finding.date).exclude(id=new_finding.id).exclude(
                 cwe=0).exclude(duplicate=True)
+        #get all findings with the same title
         eng_findings_title = Finding.objects.filter(
             test__engagement__product=new_finding.test.engagement.product,
             title=new_finding.title,
@@ -68,6 +70,7 @@ def _sync_dedupe_medium(new_finding, *args, **kwargs):
             dynamic_finding=new_finding.dynamic_finding,
             date__lte=new_finding.date).exclude(id=new_finding.id).exclude(
                 duplicate=True)
+        #combine the findings with | for each queryset
         total_findings = eng_findings_cwe | eng_findings_title
         # total_findings = total_findings.order_by('date')
         for find in total_findings:
@@ -102,21 +105,82 @@ def _sync_dedupe_medium(new_finding, *args, **kwargs):
                 super(Finding, new_finding).save(*args, **kwargs)
 
 
+def _mark_duplicate_finding(finding_new, finding_old):
+    new_finding.duplicate = True
+    new_finding.active = False
+    new_finding.verified = False
+    new_finding.duplicate_finding = finding_old
+    return new_finding
+
+#high sensitivity will be very strict and only confirm results that are nearly the exact same (eg: title, mitigation)
+def _sync_dedupe_high(new_finding, *args, **kwargs):
+        #match findings based on the title being the exact same along with the severity
+        eng_findings_title = Finding.objects.filter(
+            test__engagement__product=new_finding.test.engagement.product,
+            title=new_finding.title,
+            severity = new_finding.severity,
+            static_finding=new_finding.static_finding,
+            dynamic_finding=new_finding.dynamic_finding,
+            date__lte=new_finding.date).exclude(id=new_finding.id).exclude(
+                duplicate=True)
+        
+        total_findings = eng_findings_title
+
+        for find in total_findings:
+            #check that both findings have endpoint associated with them
+            if find.endpoints.count() != 0 and new_finding.endpoints.count() != 0:
+                list1 = new_finding.endpoints.all()
+                list2 = find.endpoints.all()
+                #check if the endpoints for each are the same for each result (thus it's highly likely that it's a duplicate!
+
+                if all(x in list1 for x in list2):
+                    new_finding = _mark_duplicate_finding(new_finding, find)
+                    find.duplicate_list.add(new_finding)
+                    
+                #we have some endpoints that aren't part of both findings. So lets merge one of them into the other
+                else:
+                    new_finding = _mark_duplicate_finding(new_finding, find)
+                    find.duplicate_list.add(new_finding)
+                    find.endpoints = list1 | list2
+                      
+                super(Finding, new_finding).save(*args, **kwargs)
+                break
+            
+            #seems like we're doing a check against the file path and line of the finding to de-dupe
+            elif find.line == new_finding.line and find.file_path == new_finding.file_path and new_finding.static_finding and len(
+                    new_finding.file_path) > 0:
+                new_finding.duplicate = True
+                new_finding.active = False
+                new_finding.verified = False
+                new_finding.duplicate_finding = find
+                find.duplicate_list.add(new_finding)
+                find.found_by.add(new_finding.test.test_type)
+                return new_finding
+            #see if the hash_code is the same 
+            elif find.hash_code == new_finding.hash_code:
+                new_finding.duplicate = True
+                new_finding.active = False
+                new_finding.verified = False
+                new_finding.duplicate_finding = find
+                find.duplicate_list.add(new_finding)
+                find.found_by.add(new_finding.test.test_type)
+                super(Finding, new_finding).save(*args, **kwargs)
+
 
 def sync_dedupe(new_finding, *args, **kwargs):
         #TODO lets add the de-dupe algorithm selector here
         #if the de-dupe algorithm hasn't been specified do the medium as default 
         if 'dedup_sensitivity' not in kwargs:
-            new_finding_temp = self._sync_dedupe_medium(new_finding, *args, **kwargs)
-        elif kwargs['dedup_sensitivity'] == 'High':
-            new_finding_temp = self._sync_dedupe_high(new_finding, *args, **kwargs)
-        elif kwargs['dedup_sensitivty'] == 'Medium':
-            new_finding_temp = self._sync_dedupe_medium(new_finding, *args, **kwargs)
+            self._sync_dedupe_medium(new_finding, *args, **kwargs)
         else:
-            logging.error("we've ended up with a dedupe sensitivity that is undefined: {} for new_finding: {}".format(kwargs['dedup_sensitivity'], new_finding))
-            new_finding_temp = new_finding
-        super(Finding, new_finding_temp).save(*args, **kwargs)  
-
+            dedup_sensitivity = kwargs['dedup_sensitivity']
+            del kwargs['dedup_sensitivity']
+            if dedup_sensitivity == 'High':
+                self._sync_dedupe_high(new_finding, *args, **kwargs)
+            elif dedup_sensitivty == 'Medium':
+                self._sync_dedupe_medium(new_finding, *args, **kwargs)
+            else:
+                logging.error("we've ended up with a dedupe sensitivity that is undefined: {} for new_finding: {}".format(kwargs['dedup_sensitivity'], new_finding))
 
 def sync_rules(new_finding, *args, **kwargs):
     rules = Rule.objects.filter(applies_to='Finding', parent_rule=None)
